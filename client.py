@@ -100,10 +100,11 @@ def main(stdscr):
                 exit()
             elif buffer.startswith("/scroll"):
                 scroll = int(buffer.split(" ")[1])
-            buffer = parse_emojis(buffer)
+            else:
+                buffer = parse_emojis(buffer)
 
-            client.send(f"{NAME}: {buffer}".encode())
-            messages.append(f"{NAME}: {buffer}")
+                client.send(f"{NAME}: {buffer}".encode())
+                messages.append(f"{NAME}: {buffer}")
             buffer = ""
             messages = messages[-200:]
         elif key in (127, curses.KEY_BACKSPACE):
