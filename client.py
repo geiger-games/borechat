@@ -6,6 +6,8 @@ import time
 PORT = int(input("port: "))
 NAME = input("name: ")
 PASSWORD = input("password: ")
+scroll = 0
+dirty = False
 
 EMOJIS = {
     ":x:": "❌",
@@ -23,19 +25,17 @@ clients = []
 client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 client.connect(("bore.pub", PORT))
 
-def receive(client_socket, stdscr, input_win, chat_win, users_sidebar):
-    global messages, clients
+def receive(client_socket):
+    global messages, clients, dirty
 
     while True:
         try:
             data = client_socket.recv(1024).decode()
             if not data: break
 
-            if data.startswith("[users]"):
-
-                clients = data[8:].split(",")
+            if data.startswith("[users]"): clients = data[8:].split(",")
             else: messages.append(data)
-            redraw(stdscr, input_win, chat_win, users_sidebar)
+            dirty = True
         except:
             break
 
@@ -51,9 +51,10 @@ def redraw(stdscr, input_win, chat_win, users_sidebar):
     users_sidebar.box()
 
     max_y, max_x = chat_win.getmaxyx()
-    start = max(0, len(messages) - max_y)
+    start = -max(0, max_y - 2 - scroll)
+    end = len(messages) - scroll
 
-    visible_messages = messages[-(max_y - 2):]
+    visible_messages = messages[start:end]
 
     for i, msg in enumerate(visible_messages):
         chat_win.addstr(i + 1, 1, msg[:max_x - 1])
@@ -64,8 +65,16 @@ def redraw(stdscr, input_win, chat_win, users_sidebar):
     chat_win.refresh()
     users_sidebar.refresh()
 
+def loopRedraw(stdscr, input_win, chat_win, users_sidebar):
+    global dirty
+
+    while True:
+        if dirty:
+            redraw(stdscr, input_win, chat_win, users_sidebar)
+            dirty = False
+
 def main(stdscr):
-    global messages
+    global messages, dirty, scroll
     max_y, max_x = stdscr.getmaxyx()
 
     chat_win = curses.newwin(max_y - 1, max_x - 15, 0, 0)
@@ -73,24 +82,24 @@ def main(stdscr):
     users_sidebar = curses.newwin(max_y, 15, 0, max_x - 15)
     key = 0
 
-    threading.Thread(target=receive, daemon=True, args=(client,stdscr,input_win,chat_win,users_sidebar,)).start()
+    threading.Thread(target=receive, daemon=True, args=(client,)).start()
+    threading.Thread(target=loopRedraw, daemon=True, args=(stdscr,input_win,chat_win,users_sidebar,)).start()
 
     buffer = ""
-
 
     client.send(f"{NAME}\n{PASSWORD}\n".encode())
     time.sleep(0.5)
     client.send(f"--> {NAME} has joined\n".encode())
 
     while True:
-        redraw(stdscr, input_win, chat_win, users_sidebar)
-
         key = input_win.getch()
         
         if key in (10, 13):
             if buffer == "/quit":
                 client.send(f"<-- {NAME} has left".encode())
                 exit()
+            elif buffer.startswith("/scroll"):
+                scroll = int(buffer.split(" ")[1])
             buffer = parse_emojis(buffer)
 
             client.send(f"{NAME}: {buffer}".encode())
@@ -102,7 +111,9 @@ def main(stdscr):
         else:
             buffer += chr(key)
         
-        input_win.clear()
+        dirty = True
+        
+        input_win.erase()
         input_win.addstr(0, 0, f"{NAME}: {buffer}")
         input_win.refresh()
 
