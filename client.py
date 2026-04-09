@@ -7,7 +7,8 @@ PORT = int(input("port: "))
 NAME = input("name: ")
 PASSWORD = input("password: ")
 scroll = 0
-dirty = False
+dirty = threading.Event()
+buffer = ""
 
 EMOJIS = {
     ":x:": "❌",
@@ -35,7 +36,7 @@ def receive(client_socket):
 
             if data.startswith("[users]"): clients = data[8:].split(",")
             else: messages.append(data)
-            dirty = True
+            dirty.set()
         except:
             break
 
@@ -45,8 +46,9 @@ def parse_emojis(text):
     return text
 
 def redraw(stdscr, input_win, chat_win, users_sidebar):
-    chat_win.clear()
-    users_sidebar.clear()
+    global buffer
+    chat_win.erase()
+    users_sidebar.erase()
     chat_win.box()
     users_sidebar.box()
 
@@ -61,20 +63,24 @@ def redraw(stdscr, input_win, chat_win, users_sidebar):
     
     for i, client in enumerate(clients):
         users_sidebar.addstr(i + 1, 1, client)
+        
+    input_win.erase()
+    input_win.addstr(0, 0, f"{NAME}: {buffer}")
+    input_win.refresh()
 
     chat_win.refresh()
     users_sidebar.refresh()
 
-def loopRedraw(stdscr, input_win, chat_win, users_sidebar):
+def clean(stdscr, input_win, chat_win, users_sidebar):
     global dirty
-
     while True:
-        if dirty:
+        if dirty.is_set():
             redraw(stdscr, input_win, chat_win, users_sidebar)
-            dirty = False
+            dirty.clear()
+        time.sleep(0.1)
 
 def main(stdscr):
-    global messages, dirty, scroll
+    global messages, dirty, scroll, buffer
     max_y, max_x = stdscr.getmaxyx()
 
     chat_win = curses.newwin(max_y - 1, max_x - 15, 0, 0)
@@ -83,9 +89,7 @@ def main(stdscr):
     key = 0
 
     threading.Thread(target=receive, daemon=True, args=(client,)).start()
-    threading.Thread(target=loopRedraw, daemon=True, args=(stdscr,input_win,chat_win,users_sidebar,)).start()
-
-    buffer = ""
+    threading.Thread(target=clean, daemon=True, args=(stdscr,input_win,chat_win,users_sidebar)).start()
 
     client.send(f"{NAME}\n{PASSWORD}\n".encode())
     time.sleep(0.5)
@@ -112,11 +116,7 @@ def main(stdscr):
         else:
             buffer += chr(key)
         
-        dirty = True
-        
-        input_win.erase()
-        input_win.addstr(0, 0, f"{NAME}: {buffer}")
-        input_win.refresh()
+        dirty.set()
 
 if __name__ == "__main__":
     curses.wrapper(main)
