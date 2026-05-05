@@ -2,6 +2,10 @@ import socket
 import threading
 import curses
 import time
+import os
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent
 
 PORT = int(input("port: "))
 NAME = input("name: ")
@@ -13,11 +17,75 @@ buffer = ""
 EMOJIS = {
     ":x:": "❌",
     ":check:": "✅",
+    ":cross:": "❌",
     ":skull:": "💀",
     ":fire:": "🔥",
     ":thumbsup:": "👍",
     ":thumbsdown:": "👎",
+    ":ok:": "👌",
+    ":100:": "💯",
     ":heart:": "❤️",
+    ":broken_heart:": "💔",
+    ":laugh:": "😂",
+    ":joy:": "😂",
+    ":sob:": "😭",
+    ":cry:": "😢",
+    ":angry:": "😡",
+    ":rage:": "🤬",
+    ":thinking:": "🤔",
+    ":shrug:": "🤷",
+    ":neutral:": "😐",
+    ":sleep:": "😴",
+    ":zzz:": "💤",
+    ":party:": "🥳",
+    ":tada:": "🎉",
+    ":confetti:": "🎊",
+    ":clap:": "👏",
+    ":wave:": "👋",
+    ":pray:": "🙏",
+    ":eyes:": "👀",
+    ":cool:": "😎",
+    ":hot:": "🥵",
+    ":cold:": "🥶",
+    ":brain:": "🧠",
+    ":skull_crossbones:": "☠️",
+    ":warning:": "⚠️",
+    ":no_entry:": "⛔",
+    ":star:": "⭐",
+    ":sparkles:": "✨",
+    ":zap:": "⚡",
+    ":boom:": "💥",
+    ":fireworks:": "🎆",
+    ":rocket:": "🚀",
+    ":computer:": "💻",
+    ":phone:": "📱",
+    ":mail:": "✉️",
+    ":bell:": "🔔",
+    ":lock:": "🔒",
+    ":unlock:": "🔓",
+    ":key:": "🔑",
+    ":moneybag:": "💰",
+    ":gift:": "🎁",
+    ":coffee:": "☕",
+    ":pizza:": "🍕",
+    ":burger:": "🍔",
+    ":beer:": "🍺",
+    ":wine:": "🍷",
+    ":dog:": "🐶",
+    ":cat:": "🐱",
+    ":fox:": "🦊",
+    ":penguin:": "🐧",
+    ":snake:": "🐍",
+    ":dragon:": "🐉",
+    ":alien:": "👽",
+    ":robot:": "🤖",
+    ":poop:": "💩",
+    ":rainbow:": "🌈",
+    ":sun:": "☀️",
+    ":moon:": "🌙",
+    ":cloud:": "☁️",
+    ":rain:": "🌧️",
+    ":snow:": "❄️"
 }
 
 messages = []
@@ -36,6 +104,9 @@ def receive(client_socket):
 
             if data.startswith("[users]"): clients = data[8:].split(",")
             else: messages.append(data)
+
+            if f"@{NAME}" in data:
+                os.system(f"(aplay {BASE_DIR / "ping.wav"} > /dev/null 2>&1) &")
             dirty.set()
         except:
             break

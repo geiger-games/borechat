@@ -52,6 +52,8 @@ def main():
         client, _ = host.accept()
         clients.append(client)
         clientName = recv_line(client)
+        if clientName in clientNames:
+            continue
         clientNames.append(clientName)
         broadcast(f"[users] {",".join(clientNames)}".encode(), None)
 
