@@ -173,7 +173,6 @@ def main(stdscr):
                         "Authorization": f"Bearer {token}"
                     }
                 )
-                sync_token = ""
             else:
                 send(buffer)
             buffer = ""
