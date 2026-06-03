@@ -165,8 +165,8 @@ def main(stdscr):
             elif buffer == "/rooms":
                 messages.append(" ".join(list(room_ids.keys())))
             elif buffer.startswith("/join"):
-                messages = load_history(room_ids[current_room])
                 current_room = buffer.split(" ")[1]
+                messages = load_history(room_ids[current_room])
                 requests.post(
                     f"https://matrix.org/_matrix/client/v3/rooms/{room_ids[current_room]}/join",
                     headers={
