@@ -13,7 +13,6 @@ dirty = threading.Event()
 buffer = ""
 USER = input("Username (@user:matrix.org): ")
 PASSWORD = input("Password: ")
-sync_token = ""
 
 r = requests.post(
     "https://matrix.org/_matrix/client/v3/login",
@@ -31,39 +30,12 @@ data = r.json()
 token = data["access_token"]
 
 def recv_messages():
-    global sync_token
+    global messages
 
     while True:
-        url = "https://matrix.org/_matrix/client/v3/sync"
-
-        params = {
-            "timeout": 30000
-        }
-
-        if sync_token:
-            params["since"] = sync_token
-
-        r = requests.get(
-            url,
-            headers={"Authorization": f"Bearer {token}"},
-            params=params
-        )
-
-        data = r.json()
-        sync_token = data["next_batch"]
-
-        rooms = data.get("rooms", {}).get("join", {})
-
-        for room, room_data in rooms.items():
-            if room != room_ids[current_room]: continue
-
-            for event in room_data.get("timeline", {}).get("events", []):
-                if event.get("type") == "m.room.message":
-                    sender = event.get("sender")
-                    content = event.get("content", {})
-                    msg = content.get("body")
-
-                    messages.append(f"{sender}: {msg}")
+        messages = load_history(room_ids[current_room])
+        
+        time.sleep(0.1)
 
 def load_history(room_id):
     r = requests.get(
@@ -83,6 +55,8 @@ def load_history(room_id):
             sender = event["sender"]
             body = event["content"]["body"]
             msgs.append(f"{sender}: {body}")
+
+            dirty.set()
 
     return list(reversed(msgs))
 
@@ -132,7 +106,7 @@ def clean(stdscr, input_win, chat_win, users_sidebar):
         if dirty.is_set():
             redraw(stdscr, input_win, chat_win, users_sidebar)
             dirty.clear()
-        time.sleep(0.1)
+        time.sleep(0.001)
 
 def main(stdscr):
     global messages, dirty, scroll, buffer, current_room, sync_token
@@ -142,6 +116,8 @@ def main(stdscr):
     input_win = curses.newwin(1, max_x - 15, max_y - 1, 0)
     users_sidebar = curses.newwin(max_y, 15, 0, max_x - 15)
     key = 0
+
+    dirty.set()
 
     threading.Thread(target=recv_messages, daemon=True).start()
     threading.Thread(target=clean, daemon=True, args=(stdscr,input_win,chat_win,users_sidebar)).start()
@@ -154,12 +130,9 @@ def main(stdscr):
                 exit()
             elif buffer.startswith("/join"):
                 current_room = buffer.split(" ")[1]
-                messages = load_history(room_ids[current_room])
-                sync_token = ""
             else:
                 send(buffer)
             buffer = ""
-            messages = messages[-200:]
         elif key in (127, curses.KEY_BACKSPACE):
             buffer = buffer[:-1]
         else:
