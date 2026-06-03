@@ -1,120 +1,84 @@
-import socket
-import threading
-import curses
-import time
-import os
-from pathlib import Path
+import requests, time, threading, curses
 
-BASE_DIR = Path(__file__).resolve().parent
-
-PORT = int(input("port: "))
-NAME = input("name: ")
-PASSWORD = input("password: ")
-scroll = 0
-dirty = threading.Event()
-buffer = ""
-
-EMOJIS = {
-    ":x:": "❌",
-    ":check:": "✅",
-    ":cross:": "❌",
-    ":skull:": "💀",
-    ":fire:": "🔥",
-    ":thumbsup:": "👍",
-    ":thumbsdown:": "👎",
-    ":ok:": "👌",
-    ":100:": "💯",
-    ":heart:": "❤️",
-    ":broken_heart:": "💔",
-    ":laugh:": "😂",
-    ":joy:": "😂",
-    ":sob:": "😭",
-    ":cry:": "😢",
-    ":angry:": "😡",
-    ":rage:": "🤬",
-    ":thinking:": "🤔",
-    ":shrug:": "🤷",
-    ":neutral:": "😐",
-    ":sleep:": "😴",
-    ":zzz:": "💤",
-    ":party:": "🥳",
-    ":tada:": "🎉",
-    ":confetti:": "🎊",
-    ":clap:": "👏",
-    ":wave:": "👋",
-    ":pray:": "🙏",
-    ":eyes:": "👀",
-    ":cool:": "😎",
-    ":hot:": "🥵",
-    ":cold:": "🥶",
-    ":brain:": "🧠",
-    ":skull_crossbones:": "☠️",
-    ":warning:": "⚠️",
-    ":no_entry:": "⛔",
-    ":star:": "⭐",
-    ":sparkles:": "✨",
-    ":zap:": "⚡",
-    ":boom:": "💥",
-    ":fireworks:": "🎆",
-    ":rocket:": "🚀",
-    ":computer:": "💻",
-    ":phone:": "📱",
-    ":mail:": "✉️",
-    ":bell:": "🔔",
-    ":lock:": "🔒",
-    ":unlock:": "🔓",
-    ":key:": "🔑",
-    ":moneybag:": "💰",
-    ":gift:": "🎁",
-    ":coffee:": "☕",
-    ":pizza:": "🍕",
-    ":burger:": "🍔",
-    ":beer:": "🍺",
-    ":wine:": "🍷",
-    ":dog:": "🐶",
-    ":cat:": "🐱",
-    ":fox:": "🦊",
-    ":penguin:": "🐧",
-    ":snake:": "🐍",
-    ":dragon:": "🐉",
-    ":alien:": "👽",
-    ":robot:": "🤖",
-    ":poop:": "💩",
-    ":rainbow:": "🌈",
-    ":sun:": "☀️",
-    ":moon:": "🌙",
-    ":cloud:": "☁️",
-    ":rain:": "🌧️",
-    ":snow:": "❄️"
-}
-
+room_id = "!tHofmdIslJQWtrRTVb:matrix.org"
 messages = []
 clients = []
+dirty = threading.Event()
+buffer = ""
+USER = input("Username (@user:matrix.org): ")
+PASSWORD = input("Password: ")
 
-client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-client.connect(("bore.pub", PORT))
+r = requests.post(
+    "https://matrix.org/_matrix/client/v3/login",
+    json={
+        "type": "m.login.password",
+        "identifier": {
+            "type": "m.id.user",
+            "user": USER
+        },
+        "password": PASSWORD
+    }
+)
 
-def receive(client_socket):
-    global messages, clients, dirty
+data = r.json()
+token = data["access_token"]
+
+url = f"https://matrix.org/_matrix/client/v3/rooms/{room_id}/send/m.room.message/{int(time.time())}"
+
+def recv_messages():
+    sync_token = ""
 
     while True:
-        try:
-            data = client_socket.recv(1024).decode()
-            if not data: break
+        url = "https://matrix.org/_matrix/client/v3/sync"
 
-            if data.startswith("[users]"): clients = data[8:].split(",")
-            else: messages.append(data)
+        params = {
+            "timeout": 30000
+        }
 
-            if f"@{NAME}" in data:
-                os.system(f"(aplay {BASE_DIR / "ping.wav"} > /dev/null 2>&1) &")
-            dirty.set()
-        except:
-            break
+        if sync_token:
+            params["since"] = sync_token
 
-def parse_emojis(text):
-    for code, emoji in EMOJIS.items():
-        text = text.replace(code, emoji)
-    return text
+        r = requests.get(
+            url,
+            headers={"Authorization": f"Bearer {token}"},
+            params=params
+        )
+
+        data = r.json()
+        sync_token = data["next_batch"]
+
+        rooms = data.get("rooms", {}).get("join", {})
+
+        for room, room_data in rooms.items():
+            if room != room_id: continue
+
+            for event in room_data.get("timeline", {}).get("events", []):
+                if event.get("type") == "m.room.message":
+                    sender = event.get("sender")
+                    content = event.get("content", {})
+                    msg = content.get("body")
+
+                    messages.append(f"{sender}: {msg}")
+
+        time.sleep(1)
+
+
+def send(msg):
+    global room_id, token
+    url = f"https://matrix.org/_matrix/client/v3/rooms/{room_id}/send/m.room.message/{int(time.time())}"
+
+    r = requests.put(
+        url,
+        headers={
+            "Authorization": f"Bearer {token}"
+        },
+        json={
+            "msgtype": "m.text",
+            "body": msg
+        }
+    )
+
+    return r.json()
 
 def redraw(stdscr, input_win, chat_win, users_sidebar):
     global buffer
@@ -124,19 +88,16 @@ def redraw(stdscr, input_win, chat_win, users_sidebar):
     users_sidebar.box()
 
     max_y, max_x = chat_win.getmaxyx()
-    start = -max(0, max_y - 2 - scroll)
-    end = len(messages) - scroll
+    start = -max(0, max_y - 2)
+    end = len(messages)
 
     visible_messages = messages[start:end]
 
     for i, msg in enumerate(visible_messages):
         chat_win.addstr(i + 1, 1, msg[:max_x - 1])
-    
-    for i, client in enumerate(clients):
-        users_sidebar.addstr(i + 1, 1, client)
         
     input_win.erase()
-    input_win.addstr(0, 0, f"{NAME}: {buffer}")
+    input_win.addstr(0, 0, buffer)
     input_win.refresh()
 
     chat_win.refresh()
@@ -159,27 +120,17 @@ def main(stdscr):
     users_sidebar = curses.newwin(max_y, 15, 0, max_x - 15)
     key = 0
 
-    threading.Thread(target=receive, daemon=True, args=(client,)).start()
+    threading.Thread(target=recv_messages, daemon=True).start()
     threading.Thread(target=clean, daemon=True, args=(stdscr,input_win,chat_win,users_sidebar)).start()
-
-    client.send(f"{NAME}\n{PASSWORD}\n".encode())
-    time.sleep(0.5)
-    client.send(f"--> {NAME} has joined\n".encode())
 
     while True:
         key = input_win.getch()
         
         if key in (10, 13):
             if buffer == "/quit":
-                client.send(f"<-- {NAME} has left".encode())
                 exit()
-            elif buffer.startswith("/scroll"):
-                scroll = int(buffer.split(" ")[1])
             else:
-                buffer = parse_emojis(buffer)
-
-                client.send(f"{NAME}: {buffer}".encode())
-                messages.append(f"{NAME}: {buffer}")
+                send(buffer)
             buffer = ""
             messages = messages[-200:]
         elif key in (127, curses.KEY_BACKSPACE):
