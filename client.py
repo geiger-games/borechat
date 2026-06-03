@@ -2,7 +2,8 @@ import requests, time, threading, curses
 
 room_ids = {
     "#general": "!tHofmdIslJQWtrRTVb:matrix.org",
-    "#linux": "!anHvnEaFeEgyfqqsLu:matrix.org"
+    "#linux": "!anHvnEaFeEgyfqqsLu:matrix.org",
+    "#gaming": "!hZkGxuwhBJdjZqAnQJ:matrix.org"
 }
 
 current_room = "#general"
@@ -13,6 +14,7 @@ dirty = threading.Event()
 buffer = ""
 USER = input("Username (@user:matrix.org): ")
 PASSWORD = input("Password: ")
+sync_token = ""
 
 r = requests.post(
     "https://matrix.org/_matrix/client/v3/login",
@@ -30,12 +32,42 @@ data = r.json()
 token = data["access_token"]
 
 def recv_messages():
-    global messages
+    global sync_token, room_ids, current_room
 
     while True:
-        messages = load_history(room_ids[current_room])
-        
-        time.sleep(0.1)
+        params = {
+            "timeout": 30000
+        }
+
+        if sync_token:
+            params["since"] = sync_token
+
+        r = requests.get(
+            "https://matrix.org/_matrix/client/v3/sync",
+            headers={
+                "Authorization": f"Bearer {token}"
+            },
+            params=params
+        )
+
+        data = r.json()
+        sync_token = data["next_batch"]
+
+        rooms = data.get("rooms", {}).get("join", {})
+
+        for room, room_data in rooms.items():
+            if room != room_ids[current_room]:
+                continue
+
+            for event in room_data.get("timeline", {}).get("events", []):
+                if event.get("type") != "m.room.message":
+                    continue
+
+                sender = event.get("sender")
+                body = event.get("content", {}).get("body", "")
+
+                messages.append(f"{sender}: {body}")
+                dirty.set()
 
 def load_history(room_id):
     r = requests.get(
@@ -128,8 +160,19 @@ def main(stdscr):
         if key in (10, 13):
             if buffer == "/quit":
                 exit()
+            elif buffer == "/help":
+                messages.extend(["/join - joins and adds you to a Borechat room", "/rooms - shows all available Borechat rooms"])
+            elif buffer == "/rooms":
+                messages.append("#general #linux #gaming")
             elif buffer.startswith("/join"):
                 current_room = buffer.split(" ")[1]
+                requests.post(
+                    f"https://matrix.org/_matrix/client/v3/rooms/{room_ids[current_room]}/join",
+                    headers={
+                        "Authorization": f"Bearer {token}"
+                    }
+                )
+                sync_token = ""
             else:
                 send(buffer)
             buffer = ""
