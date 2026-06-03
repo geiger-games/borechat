@@ -163,8 +163,9 @@ def main(stdscr):
             elif buffer == "/help":
                 messages.extend(["/join - joins and adds you to a Borechat room", "/rooms - shows all available Borechat rooms"])
             elif buffer == "/rooms":
-                messages.append("#general #linux #gaming")
+                messages.append(" ".join(list(room_ids.keys())))
             elif buffer.startswith("/join"):
+                messages = load_history(room_ids[current_room])
                 current_room = buffer.split(" ")[1]
                 requests.post(
                     f"https://matrix.org/_matrix/client/v3/rooms/{room_ids[current_room]}/join",
