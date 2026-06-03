@@ -1,12 +1,19 @@
 import requests, time, threading, curses
 
-room_id = "!tHofmdIslJQWtrRTVb:matrix.org"
+room_ids = {
+    "#general": "!tHofmdIslJQWtrRTVb:matrix.org",
+    "#linux": "!anHvnEaFeEgyfqqsLu:matrix.org"
+}
+
+current_room = "#general"
+
 messages = []
 clients = []
 dirty = threading.Event()
 buffer = ""
 USER = input("Username (@user:matrix.org): ")
 PASSWORD = input("Password: ")
+sync_token = ""
 
 r = requests.post(
     "https://matrix.org/_matrix/client/v3/login",
@@ -23,10 +30,8 @@ r = requests.post(
 data = r.json()
 token = data["access_token"]
 
-url = f"https://matrix.org/_matrix/client/v3/rooms/{room_id}/send/m.room.message/{int(time.time())}"
-
 def recv_messages():
-    sync_token = ""
+    global sync_token
 
     while True:
         url = "https://matrix.org/_matrix/client/v3/sync"
@@ -50,7 +55,7 @@ def recv_messages():
         rooms = data.get("rooms", {}).get("join", {})
 
         for room, room_data in rooms.items():
-            if room != room_id: continue
+            if room != room_ids[current_room]: continue
 
             for event in room_data.get("timeline", {}).get("events", []):
                 if event.get("type") == "m.room.message":
@@ -60,12 +65,30 @@ def recv_messages():
 
                     messages.append(f"{sender}: {msg}")
 
-        time.sleep(1)
+def load_history(room_id):
+    r = requests.get(
+        f"https://matrix.org/_matrix/client/v3/rooms/{room_id}/messages",
+        headers={"Authorization": f"Bearer {token}"},
+        params={
+            "dir": "b",
+            "limit": 30
+        }
+    )
 
+    data = r.json()
+
+    msgs = []
+    for event in data.get("chunk", []):
+        if event.get("type") == "m.room.message":
+            sender = event["sender"]
+            body = event["content"]["body"]
+            msgs.append(f"{sender}: {body}")
+
+    return list(reversed(msgs))
 
 def send(msg):
-    global room_id, token
-    url = f"https://matrix.org/_matrix/client/v3/rooms/{room_id}/send/m.room.message/{int(time.time())}"
+    global room_ids, current_room, token
+    url = f"https://matrix.org/_matrix/client/v3/rooms/{room_ids[current_room]}/send/m.room.message/{int(time.time())}"
 
     r = requests.put(
         url,
@@ -112,7 +135,7 @@ def clean(stdscr, input_win, chat_win, users_sidebar):
         time.sleep(0.1)
 
 def main(stdscr):
-    global messages, dirty, scroll, buffer
+    global messages, dirty, scroll, buffer, current_room, sync_token
     max_y, max_x = stdscr.getmaxyx()
 
     chat_win = curses.newwin(max_y - 1, max_x - 15, 0, 0)
@@ -129,6 +152,10 @@ def main(stdscr):
         if key in (10, 13):
             if buffer == "/quit":
                 exit()
+            elif buffer.startswith("/join"):
+                current_room = buffer.split(" ")[1]
+                messages = load_history(room_ids[current_room])
+                sync_token = ""
             else:
                 send(buffer)
             buffer = ""
