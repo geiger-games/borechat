@@ -1,15 +1,12 @@
 # borechat
-Terminal-based chat app using the Matrix protocol.
+TUI chat app originally using the bore.pub service, now using the better protocol Matrix.
 
 ## Installation
-On Windows you may install the Python interpreter via Microsoft Store.
-On Windows, you should also `pip install windows-curses`.
-
-On Linux you might already have a Python interpreter installed.
-If not, install the interpreter with the package manager you have in your distribution.
-
-After making sure you have a Python interpreter, run `pip install -r requirements.txt` to install any required packages.
 Install client.py and run it with `python3`. (3.10+ sufficient)
+If on Windows install python from [the downloads page](https://www.python.org/downloads/)
+If on Linux install the python3 package using your package manager
+If on MacOS install python from [the downloads page](https://www.python.org/downloads/)
 
 ## Possible Issues
 If Borechat is not loading, press a single key and the UI should pop up.
+If you get something like acces_token in square brackets try logging in again
