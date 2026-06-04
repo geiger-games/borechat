@@ -14,7 +14,9 @@ clients = []
 dirty = threading.Event()
 USER = input("Username (@user:example.org): ")
 PASSWORD = input("Password: ")
-HOME_SERVER = input("Homeserver: ")
+HOME_SERVER = input("Homeserver (Leave empty for matrix.org): ")
+if HOME_SERVER == "":
+    HOME_SERVER = "matrix.org"
 sync_token = ""
 
 win = tk.Tk()
