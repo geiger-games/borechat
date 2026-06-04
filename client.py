@@ -128,6 +128,8 @@ def send(event=None):
     
     entry.delete(0, "end")
 
+    dirty.set()
+
 def sendToRoom(msg):
     global room_ids, current_room, token, entry
     url = f"https://matrix.org/_matrix/client/v3/rooms/{room_ids[current_room]}/send/m.room.message/{int(time.time())}"
