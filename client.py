@@ -1,5 +1,6 @@
 import requests, time, threading
 import tkinter as tk
+from getpass import *
 
 room_ids = {
     "#general": "!tHofmdIslJQWtrRTVb:matrix.org",
@@ -13,7 +14,7 @@ messages = []
 clients = []
 dirty = threading.Event()
 USER = input("Username (@user:example.org): ")
-PASSWORD = input("Password: ")
+PASSWORD = getpass("Password: ")
 HOME_SERVER = input("Homeserver (Leave empty for matrix.org): ")
 if HOME_SERVER == "":
     HOME_SERVER = "matrix.org"
