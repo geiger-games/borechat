@@ -12,7 +12,7 @@ current_room = "#general"
 messages = []
 clients = []
 dirty = threading.Event()
-USER = input("Username (@user:matrix.org): ")
+USER = input("Username (@user:example.org): ")
 PASSWORD = input("Password: ")
 HOME_SERVER = input("Homeserver: ")
 sync_token = ""
@@ -54,7 +54,7 @@ def recv_messages():
             params["since"] = sync_token
 
         r = requests.get(
-            "https://matrix.org/_matrix/client/v3/sync",
+            f"https://{HOME_SERVER}/_matrix/client/v3/sync",
             headers={
                 "Authorization": f"Bearer {token}"
             },
@@ -82,7 +82,7 @@ def recv_messages():
 
 def load_history(room_id):
     r = requests.get(
-        f"https://matrix.org/_matrix/client/v3/rooms/{room_id}/messages",
+        f"https://{HOME_SERVER}/_matrix/client/v3/rooms/{room_id}/messages",
         headers={"Authorization": f"Bearer {token}"},
         params={
             "dir": "b",
@@ -117,7 +117,7 @@ def send(event=None):
     elif msg.startswith("/join"):
         current_room = msg.split(" ")[1]
         requests.post(
-            f"https://matrix.org/_matrix/client/v3/rooms/{room_ids[current_room]}/join",
+            f"https://{HOME_SERVER}/_matrix/client/v3/rooms/{room_ids[current_room]}/join",
             headers={
                 "Authorization": f"Bearer {token}"
             }
@@ -133,7 +133,7 @@ def send(event=None):
 
 def sendToRoom(msg):
     global room_ids, current_room, token, entry
-    url = f"https://matrix.org/_matrix/client/v3/rooms/{room_ids[current_room]}/send/m.room.message/{int(time.time())}"
+    url = f"https://{HOME_SERVER}/_matrix/client/v3/rooms/{room_ids[current_room]}/send/m.room.message/{int(time.time())}"
 
     r = requests.put(
         url,
