@@ -14,6 +14,7 @@ clients = []
 dirty = threading.Event()
 USER = input("Username (@user:matrix.org): ")
 PASSWORD = input("Password: ")
+HOME_SERVER = input("Homeserver: ")
 sync_token = ""
 
 win = tk.Tk()
@@ -27,7 +28,7 @@ entry = tk.Entry(win)
 entry.pack(fill="x")
 
 r = requests.post(
-    "https://matrix.org/_matrix/client/v3/login",
+    f"https://{HOME_SERVER}/_matrix/client/v3/login",
     json={
         "type": "m.login.password",
         "identifier": {
