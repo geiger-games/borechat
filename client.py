@@ -1,4 +1,5 @@
-import requests, time, threading, curses
+import requests, time, threading
+import tkinter as tk
 
 room_ids = {
     "#general": "!tHofmdIslJQWtrRTVb:matrix.org",
@@ -11,10 +12,19 @@ current_room = "#general"
 messages = []
 clients = []
 dirty = threading.Event()
-buffer = ""
 USER = input("Username (@user:matrix.org): ")
 PASSWORD = input("Password: ")
 sync_token = ""
+
+win = tk.Tk()
+win.title("Borechat")
+win.geometry("1080x720")
+
+chat = tk.Text(win)
+chat.pack(fill="both", expand=True)
+
+entry = tk.Entry(win)
+entry.pack(fill="x")
 
 r = requests.post(
     "https://matrix.org/_matrix/client/v3/login",
@@ -75,7 +85,7 @@ def load_history(room_id):
         headers={"Authorization": f"Bearer {token}"},
         params={
             "dir": "b",
-            "limit": 30
+            "limit": 100
         }
     )
 
@@ -92,8 +102,34 @@ def load_history(room_id):
 
     return list(reversed(msgs))
 
-def send(msg):
-    global room_ids, current_room, token
+def send(event=None):
+    global current_room, room_ids, entry, messages
+
+    msg = entry.get()
+
+    if msg == "/quit":
+        exit()
+    elif msg == "/help":
+        messages.extend(["/join - joins and adds you to a Borechat room", "/rooms - shows all available Borechat rooms"])
+    elif msg == "/rooms":
+        messages.append(" ".join(list(room_ids.keys())))
+    elif msg.startswith("/join"):
+        current_room = msg.split(" ")[1]
+        requests.post(
+            f"https://matrix.org/_matrix/client/v3/rooms/{room_ids[current_room]}/join",
+            headers={
+                "Authorization": f"Bearer {token}"
+            }
+        )
+        messages.clear()
+        messages.extend(load_history(room_ids[current_room]))
+    else:
+        sendToRoom(msg)
+    
+    entry.delete(0, "end")
+
+def sendToRoom(msg):
+    global room_ids, current_room, token, entry
     url = f"https://matrix.org/_matrix/client/v3/rooms/{room_ids[current_room]}/send/m.room.message/{int(time.time())}"
 
     r = requests.put(
@@ -109,79 +145,23 @@ def send(msg):
 
     return r.json()
 
-def redraw(stdscr, input_win, chat_win, users_sidebar):
-    global buffer
-    chat_win.erase()
-    users_sidebar.erase()
-    chat_win.box()
-    users_sidebar.box()
+entry.bind("<Return>", send)
 
-    max_y, max_x = chat_win.getmaxyx()
-    start = -max(0, max_y - 2)
-    end = len(messages)
+def render_chat():
+    chat.delete("1.0", "end")
+    chat.insert("end", "\n".join(messages))
 
-    visible_messages = messages[start:end]
-
-    for i, msg in enumerate(visible_messages):
-        chat_win.addstr(i + 1, 1, msg[:max_x - 1])
-        
-    input_win.erase()
-    input_win.addstr(0, 0, buffer)
-    input_win.refresh()
-
-    chat_win.refresh()
-    users_sidebar.refresh()
-
-def clean(stdscr, input_win, chat_win, users_sidebar):
-    global dirty
+def refresh_chat():
     while True:
-        if dirty.is_set():
-            redraw(stdscr, input_win, chat_win, users_sidebar)
-            dirty.clear()
-        time.sleep(0.001)
+        dirty.wait()
+        dirty.clear()
+        win.after(0, render_chat)
 
-def main(stdscr):
-    global messages, dirty, scroll, buffer, current_room, sync_token
-    max_y, max_x = stdscr.getmaxyx()
-
-    chat_win = curses.newwin(max_y - 1, max_x - 15, 0, 0)
-    input_win = curses.newwin(1, max_x - 15, max_y - 1, 0)
-    users_sidebar = curses.newwin(max_y, 15, 0, max_x - 15)
-    key = 0
-
-    dirty.set()
-
+def main():
     threading.Thread(target=recv_messages, daemon=True).start()
-    threading.Thread(target=clean, daemon=True, args=(stdscr,input_win,chat_win,users_sidebar)).start()
+    threading.Thread(target=refresh_chat, daemon=True).start()
 
-    while True:
-        key = input_win.getch()
-        
-        if key in (10, 13):
-            if buffer == "/quit":
-                exit()
-            elif buffer == "/help":
-                messages.extend(["/join - joins and adds you to a Borechat room", "/rooms - shows all available Borechat rooms"])
-            elif buffer == "/rooms":
-                messages.append(" ".join(list(room_ids.keys())))
-            elif buffer.startswith("/join"):
-                current_room = buffer.split(" ")[1]
-                requests.post(
-                    f"https://matrix.org/_matrix/client/v3/rooms/{room_ids[current_room]}/join",
-                    headers={
-                        "Authorization": f"Bearer {token}"
-                    }
-                )
-                messages = load_history(room_ids[current_room])
-            else:
-                send(buffer)
-            buffer = ""
-        elif key in (127, curses.KEY_BACKSPACE):
-            buffer = buffer[:-1]
-        else:
-            buffer += chr(key)
-        
-        dirty.set()
+    win.mainloop()
 
 if __name__ == "__main__":
-    curses.wrapper(main)
+    main()
