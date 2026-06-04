@@ -150,8 +150,11 @@ def sendToRoom(msg):
 entry.bind("<Return>", send)
 
 def render_chat():
+    chat.config(state="normal")
     chat.delete("1.0", "end")
     chat.insert("end", "\n".join(messages))
+    chat.see("end")
+    chat.config(state="disabled")
 
 def refresh_chat():
     while True:
@@ -162,6 +165,8 @@ def refresh_chat():
 def main():
     threading.Thread(target=recv_messages, daemon=True).start()
     threading.Thread(target=refresh_chat, daemon=True).start()
+
+    chat.config(state="disabled")
 
     win.mainloop()
 
