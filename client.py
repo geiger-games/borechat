@@ -1,6 +1,12 @@
-import requests, time, threading
-import tkinter as tk
+import sys
+import threading
+import time
 from getpass import *
+
+import requests
+from textual import events
+from textual.app import App, ComposeResult
+from textual.widgets import Button, Input, Static
 
 room_ids = {
     "#general": "!tHofmdIslJQWtrRTVb:matrix.org",
@@ -13,41 +19,11 @@ current_room = "#general"
 messages = []
 clients = []
 dirty = threading.Event()
-USER = input("Username (@user:example.org): ")
-PASSWORD = getpass("Password: ")
-HOMESERVER = USER.split(":")[1]
+login = threading.Event()
 sync_token = ""
 
-win = tk.Tk()
-win.title("Borechat")
-win.geometry("1080x720")
-
-chat = tk.Text(win)
-chat.pack(fill="both", expand=True)
-
-chat.tag_config("self", foreground="#a438c7")
-chat.tag_config("other", foreground="#3c3c3c")
-
-entry = tk.Entry(win)
-entry.pack(fill="x")
-
-r = requests.post(
-    f"https://{HOME_SERVER}/_matrix/client/v3/login",
-    json={
-        "type": "m.login.password",
-        "identifier": {
-            "type": "m.id.user",
-            "user": USER
-        },
-        "password": PASSWORD
-    }
-)
-
-data = r.json()
-token = data["access_token"]
-
 def recv_messages():
-    global sync_token, room_ids, current_room
+    global sync_token
 
     while True:
         params = {
@@ -58,7 +34,7 @@ def recv_messages():
             params["since"] = sync_token
 
         r = requests.get(
-            f"https://{HOME_SERVER}/_matrix/client/v3/sync",
+            f"https://{HOMESERVER}/_matrix/client/v3/sync",
             headers={
                 "Authorization": f"Bearer {token}"
             },
@@ -87,11 +63,11 @@ def recv_messages():
 
 def load_history(room_id):
     r = requests.get(
-        f"https://{HOME_SERVER}/_matrix/client/v3/rooms/{room_id}/messages",
+        f"https://{HOMESERVER}/_matrix/client/v3/rooms/{room_id}/messages",
         headers={"Authorization": f"Bearer {token}"},
         params={
             "dir": "b",
-            "limit": 100
+            "limit": 75
         }
     )
 
@@ -100,30 +76,43 @@ def load_history(room_id):
     msgs = []
     for event in data.get("chunk", []):
         if event.get("type") == "m.room.message":
-            name, server = event["sender"].split(":")
+            content = event.get("content", {})
+            body = content.get("body")
+            # Redacted Matrix events may retain the message type while their
+            # content (including the body) has been removed.
+            if not isinstance(body, str):
+                continue
+
+            name, server = event["sender"].split(":", 1)
             sender = name.replace("@", "") + f" @ {server}"
-            body = event["content"]["body"]
             msgs.append(f"[{sender}] {body}")
 
             dirty.set()
 
     return list(reversed(msgs))
 
-def send(event=None):
-    global current_room, room_ids, entry, messages
+def send(event=None, msg=None):
+    global current_room
 
-    msg = entry.get()
+    if msg is None:
+        return
 
     if msg == "/quit":
-        exit()
+        sys.exit(0)
     elif msg == "/help":
         messages.extend(["/join - joins and adds you to a Borechat room", "/rooms - shows all available Borechat rooms"])
     elif msg == "/rooms":
         messages.append(" ".join(list(room_ids.keys())))
     elif msg.startswith("/join"):
-        current_room = msg.split(" ")[1]
+        parts = msg.split()
+        if len(parts) != 2 or parts[1] not in room_ids:
+            messages.append("Usage: /join <room> (available: " + " ".join(room_ids) + ")")
+            dirty.set()
+            return
+
+        current_room = parts[1]
         requests.post(
-            f"https://{HOME_SERVER}/_matrix/client/v3/rooms/{room_ids[current_room]}/join",
+            f"https://{HOMESERVER}/_matrix/client/v3/rooms/{room_ids[current_room]}/join",
             headers={
                 "Authorization": f"Bearer {token}"
             }
@@ -132,14 +121,12 @@ def send(event=None):
         messages.extend(load_history(room_ids[current_room]))
     else:
         sendToRoom(msg)
-    
-    entry.delete(0, "end")
 
     dirty.set()
 
+
 def sendToRoom(msg):
-    global room_ids, current_room, token, entry
-    url = f"https://{HOME_SERVER}/_matrix/client/v3/rooms/{room_ids[current_room]}/send/m.room.message/{int(time.time())}"
+    url = f"https://{HOMESERVER}/_matrix/client/v3/rooms/{room_ids[current_room]}/send/m.room.message/{int(time.time())}"
 
     r = requests.put(
         url,
@@ -154,39 +141,120 @@ def sendToRoom(msg):
 
     return r.json()
 
-entry.bind("<Return>", send)
 
-def render_chat():
-    chat.config(state="normal")
-    chat.delete("1.0", "end")
+def render_chat(chat):
+    text = ""
     for msg in messages:
         if msg.startswith("["):
-            sender, body = msg.split("]")
-            selfname = "[" + " @ ".join(USER.replace("@", "").split(":"))
-
-            tag = "self" if sender == selfname else "other"
-
-            chat.insert("end", sender + "]", tag)
-            chat.insert("end", body + "\n")
+            sender, body = msg.split("]", 1)
+            text += sender + "]" + body + "\n"
         else:
-            chat.insert("end", msg + "\n")
+            text += msg + "\n"
+    chat.update(text)
 
-    chat.see("end")
-    chat.config(state="disabled")
+class LoginApp(App):
+    CSS = """
+    Screen {
+        align: center middle;
+    }
+    Button {
+        align: center middle;
+    }
+    Input {
+        align: center middle;
+    }
+    """
 
-def refresh_chat():
-    while True:
+    def __init__(self):
+        super().__init__()
+        self.input = Input(placeholder="@user:example.org")
+        self.password_input = Input(password=True, placeholder="Password")
+        self.login_button = Button("Login")
+    
+    def compose(self) -> ComposeResult:
+        yield self.input
+        yield self.password_input
+        yield self.login_button
+
+    def on_mount(self) -> None:
+        self.input.border_title = "Username"
+        self.password_input.border_title = "Password"
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        global USER, PASSWORD, HOMESERVER, token
+
+        USER = self.input.value.split(":", 1)[0].replace("@", "")
+        HOMESERVER = self.input.value.split(":", 1)[1]
+
+        PASSWORD = self.password_input.value
+
+        r = requests.post(
+            f"https://{HOMESERVER}/_matrix/client/v3/login",
+            json={
+                "type": "m.login.password",
+                "identifier": {"type": "m.id.user", "user": USER},
+                "password": PASSWORD,
+            },
+        )
+        data = r.json()
+        token = data["access_token"]
+
+        login.set()
+        self.exit()
+
+
+
+
+class ChatApp(App):
+    CSS = """
+    Input {
+        align: center bottom;
+    }
+    Static {
+        height: 1fr;
+        width: 100%;
+        border: round $accent;
+        padding: 1 2;
+        overflow: auto;
+    }
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.input = Input(placeholder="Type something...")
+        self.chat = Static("")
+
+    def compose(self) -> ComposeResult:
+        yield self.chat
+        yield self.input
+
+    def on_mount(self) -> None:
+        self.chat.border_title = f"Current Room: {current_room}"
+        self.input.border_title = "Input (Press Enter to send)"
+        self.chat.loading = True
+        threading.Thread(target=recv_messages, daemon=True).start()
         dirty.wait()
-        dirty.clear()
-        win.after(0, render_chat)
+        messages.clear()
+        messages.extend(load_history(room_ids[current_room]))
+        self.chat.loading = False
+        self.set_interval(0.25, self.refresh_chat)
 
-def main():
-    threading.Thread(target=recv_messages, daemon=True).start()
-    threading.Thread(target=refresh_chat, daemon=True).start()
+    def refresh_chat(self) -> None:
+        if dirty.is_set():
+            dirty.clear()
+            render_chat(self.chat)
 
-    chat.config(state="disabled")
+    def on_key(self, event: events.Key) -> None:
+        if event.key == "enter":
+            send(msg=self.input.value)
+            self.input.value = ""
 
-    win.mainloop()
+def main(app):
+    app.run()
+    
 
 if __name__ == "__main__":
-    main()
+    login_app = LoginApp()
+    main(login_app)
+    login.wait()
+    main(ChatApp())
